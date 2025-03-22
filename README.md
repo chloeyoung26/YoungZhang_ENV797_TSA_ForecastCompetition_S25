@@ -3,7 +3,7 @@ TSA Forecasting Competition
 
 
 # Data
-`load.xlsx` - the training set and test set
-`temperature.xlsx` - additional data set that could be added to the model as predictors (optional)
-`relative_humidity.xlsx` - additional data set that could be added to the model as predictors (optional)
-`sample_submission.csv` - a sample submission file in the correct format
+- `load.xlsx` - the training set and test set
+- `temperature.xlsx` - additional data set that could be added to the model as predictors (optional)
+- `relative_humidity.xlsx` - additional data set that could be added to the model as predictors (optional)
+- `sample_submission.csv` - a sample submission file in the correct format
