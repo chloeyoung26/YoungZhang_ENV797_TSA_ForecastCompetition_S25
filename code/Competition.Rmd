@@ -5,26 +5,57 @@ date: "2025-03-22"
 output: pdf_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
 ## R Markdown
 
 This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
 
 When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
-```{r cars}
-summary(cars)
+```{r}
+knitr::opts_chunk$set(echo = TRUE,tidy.opts=list(width.cutoff=60), tidy=TRUE) 
 ```
 
-## Including Plots
-
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r package, message=FALSE}
+library(readxl)
+library(openxlsx)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(forecast)  
+library(Kendall)
+library(tseries)
+library(outliers)
+library(tidyverse)
+library(smooth)
+library(zoo)
+library(kableExtra)
 ```
+
+Importing Data
+```{r}
+#importing data
+load <- read_excel("/home/guest/ForecastingCompetition/data/raw/load.xlsx")
+
+#Creating a data frame with daily observations
+load <- load %>% 
+  rowwise() %>%
+  mutate(daily_avg = mean(c_across(h1:h24), na.rm = TRUE)) %>%
+  ungroup()
+
+ggplot(load, aes(x=date,y=daily_avg)) +
+  geom_line() +
+  ylab("Average Daily Load")
+
+summary(load$daily_avg)
+
+```
+
+Converting into time series
+```{r}
+load_daily <- msts(load$daily_avg, 
+                           seasonal.periods =c(7,365.25),
+                           start=c(2005,01,01))
+```
+
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
