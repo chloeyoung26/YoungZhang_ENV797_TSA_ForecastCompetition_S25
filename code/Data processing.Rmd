@@ -1,0 +1,166 @@
+---
+title: "Data Processing"
+author: "YoungZhang"
+date: "2025-04-01"
+output: pdf_document
+---
+
+**Logs:**
+
+2025-04-01: I convert the load, humidity, and temperature data into daily and hourly data, then save the csv files to the "processed" file. Note: I noticed that there are 6 missing variables for all the 3 series, I filled the missings using interpolation method. But I didn't do anything for the daily data.
+
+---
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE,tidy.opts=list(width.cutoff=60), tidy=TRUE) 
+```
+
+```{r package, message=FALSE}
+library(readxl)
+library(openxlsx)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(forecast)  
+library(Kendall)
+library(tseries)
+library(outliers)
+library(tidyverse)
+library(smooth)
+library(zoo)
+library(kableExtra)
+```
+
+Importing Data
+```{r}
+#importing data
+load <- read_excel("../data/raw/load.xlsx")   # I changed the to the relative address 
+
+#Creating a data frame with daily observations
+load <- load %>% 
+  rowwise() %>%
+  mutate(daily_avg = mean(c_across(h1:h24), na.rm = TRUE)) %>%
+  ungroup()
+
+ggplot(load, aes(x=date,y=daily_avg)) +
+  geom_line() +
+  ylab("Average Daily Load")
+
+summary(load$daily_avg)
+
+```
+
+Converting into time series
+```{r}
+load_daily <- msts(load$daily_avg, 
+                           seasonal.periods =c(7,365.25),
+                           start=c(2005,01,01))
+```
+
+
+Load humidity and temperature data
+```{r}
+
+## Transform hourly data of humidity and temperature
+# Here, I first average the humidity/temperature of 28 stations within one hour. Then I summarize to get daily values
+
+
+humidity <- read_excel("../data/raw/relative_humidity.xlsx")
+
+
+humidity_daily <- humidity %>% 
+  rowwise() %>%
+  mutate(humidity_avg = mean(c_across(rh_ws1:rh_ws28), na.rm = TRUE)) %>%  
+  ungroup() %>%
+  group_by(date) %>%
+  summarize(daily_avg_humidity = mean(humidity_avg, na.rm = TRUE))   
+
+
+humidity_daily_ts <- msts(humidity_daily$daily_avg_humidity, 
+                           seasonal.periods =c(7,365.25),
+                           start=c(2005,01,01))
+
+
+## Transform hourly data of temperature
+
+temperature <- read_excel("../data/raw/temperature.xlsx")
+
+temperature_daily <- temperature %>% 
+  rowwise() %>%
+  mutate(temperature_avg = mean(c_across(t_ws1:t_ws28), na.rm = TRUE)) %>%
+  ungroup() %>%
+  group_by(date) %>%
+  summarize(daily_avg_temperature = mean(temperature_avg, na.rm = TRUE))
+
+
+temperature_daily_ts <- msts(temperature_daily$daily_avg_temperature, 
+                           seasonal.periods =c(7,365.25),
+                           start=c(2005,01,01))
+
+autoplot(humidity_daily_ts, series = "humidity")+
+  autolayer(temperature_daily_ts, series = "temperature")
+
+
+## Combine the three series together
+
+combined_daily_series <- cbind(load_daily,humidity_daily_ts,temperature_daily_ts)
+
+
+```
+
+
+Output processed data
+```{r}
+## Output the daily data
+
+combined_ts_df <- as.data.frame(combined_daily_series)
+
+write.csv(combined_ts_df, "../data/processed/processed_daily_data.csv", row.names = FALSE)
+
+```
+
+```{r}
+## Output hourly data
+load <- read_excel("../data/raw/load.xlsx")
+load_long <- load %>%
+  pivot_longer(cols = starts_with("h"),  
+               names_to = "hr",          
+               names_prefix = "h",      
+               values_to = "load_value") 
+
+load_long$hr <- as.numeric(load_long$hr)
+
+
+humidity <- read_excel("../data/raw/relative_humidity.xlsx")
+humidity <- humidity %>% 
+  rowwise() %>%
+  mutate(humidity_avg = mean(c_across(rh_ws1:rh_ws28), na.rm = TRUE)) %>%  
+  ungroup()
+
+
+
+temperature <- read_excel("../data/raw/temperature.xlsx")
+temperature <- temperature %>% 
+  rowwise() %>%
+  mutate(temperature_avg = mean(c_across(t_ws1:t_ws28), na.rm = TRUE)) %>%
+  ungroup() 
+
+
+
+combined_hourly  <- load_long %>%
+  left_join(humidity %>% select(date, hr, humidity_avg), by = c("date", "hr"))%>%
+  left_join(temperature %>% select(date, hr, temperature_avg), by = c("date", "hr"))
+
+
+# deal with missing values of hourly data
+combined_hourly$humidity_avg <- na.approx(combined_hourly$humidity_avg)
+combined_hourly$temperature_avg <- na.approx(combined_hourly$temperature_avg)
+combined_hourly$load_value <- na.approx(combined_hourly$load_value)
+
+
+write.csv(combined_hourly, "../data/processed/processed_hourly_data.csv", row.names = FALSE)
+
+```
+
+
+
