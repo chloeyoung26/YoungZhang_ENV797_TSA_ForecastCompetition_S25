@@ -7,7 +7,9 @@ output: pdf_document
 
 **Logs:**
 
-2025-04-01: I convert the load, humidity, and temperature data into daily and hourly data, then save the csv files to the "processed" file. Note: I noticed that there are 6 missing variables for all the 3 series, I filled the missings using interpolation method. But I didn't do anything for the daily data.
+2025-04-01 V1: I convert the load, humidity, and temperature data into daily and hourly data, then save the csv files to the "processed" file. Note: I noticed that there are 6 missing variables for all the 3 series, I filled the missings using interpolation method. But I didn't do anything for the daily data.
+
+2025-04-01 V2: Add date to the daily file.
 
 ---
 
@@ -114,6 +116,9 @@ Output processed data
 ## Output the daily data
 
 combined_ts_df <- as.data.frame(combined_daily_series)
+
+combined_ts_df <- cbind(load$date,combined_ts_df)
+colnames(combined_ts_df)[1] <- "date"
 
 write.csv(combined_ts_df, "../data/processed/processed_daily_data.csv", row.names = FALSE)
 
