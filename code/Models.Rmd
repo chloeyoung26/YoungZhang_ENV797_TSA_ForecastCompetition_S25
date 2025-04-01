@@ -6,25 +6,90 @@ date: "2025-04-01"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE,tidy.opts=list(width.cutoff=60), tidy=TRUE) 
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r}
+library(readxl)
+library(openxlsx)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(forecast)  
+library(Kendall)
+library(tseries)
+library(outliers)
+library(tidyverse)
+library(smooth)
+library(zoo)
+library(kableExtra)
 ```
 
-## Including Plots
-
-You can also embed plots, for example:
+## Importing Data
 
 ```{r pressure, echo=FALSE}
-plot(pressure)
+
+#Importing daily data
+daily_data <- read.csv(file="/home/guest/ForecastingCompetition/data/processed/processed_daily_data.csv", header=TRUE)
+
+#Importing hourly data
+hourly_data <- read.csv(file="/home/guest/ForecastingCompetition/data/processed/processed_hourly_data.csv", header=TRUE)
+
+#Inspect daily data
+head(daily_data)
+nvar <- ncol(daily_data) - 1
+nobs <- nrow(daily_data)
+
+#Inspect hourly data
+head(hourly_data)
+nvar <- ncol(hourly_data) - 1
+nobs <- nrow(hourly_data)
+
 ```
+## Testing and Training Datasets
+```{r}
+
+ts_load_daily <- msts(daily_data$load_daily, 
+                           seasonal.periods =c(7,365.25),
+                           start=c(2005,01,01))
+
+# Training data: January 1, 2005, to December 31, 2009
+training_data <- window(ts_load_daily, end=c(2009, 365))
+
+# Test data: 2010-01-01 onward
+test_data <- window(ts_load_daily, start=c(2010,1))
+
+```
+
+
+## Initial Plots & Time Series
+```{r}
+
+TSplot <- autoplot(ts_load_daily) +
+    ggtitle("Daily Load Time Series (2005-2010)") +
+    xlab("Year") + 
+    ylab("Load") +
+    theme_minimal()
+plot(TSplot)
+
+#ACF and PACF plots
+par(mfrow=c(1,2))
+ACF_Plot <- Acf(daily_data$load_daily, lag = 40, plot = TRUE)
+PACF_Plot <- Pacf(daily_data$load_daily, lag = 40)
+par(mfrow=c(1,1))
+
+```
+
+## Forecast using Seasonal Naive Method
+```{r}
+
+# Seasonal naive on original data
+SNAIVE_seas <- snaive(ts_load_daily, h=12)
+plot(SNAIVE_seas)
+
+checkresiduals(SNAIVE_seas)
+
+```
+
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
