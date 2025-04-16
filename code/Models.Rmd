@@ -133,3 +133,18 @@ write.csv(tbats_forecast, file = "tbats_forecast.csv")
 
 ```
 
+## STL + ETS
+```{r}
+
+load_stl_ets <- stlf(ts_load_daily, h = 60, method = "ets")
+plot(load_stl_ets)
+
+```
+
+## Write CSV for STL + ETS
+```{r}
+
+write.csv(load_stl_ets, file = "stlets_forecast.csv")
+
+```
+
