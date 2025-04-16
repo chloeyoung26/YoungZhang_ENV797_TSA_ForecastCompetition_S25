@@ -49,15 +49,31 @@ nobs <- nrow(hourly_data)
 ## Testing and Training Datasets
 ```{r}
 
+
+ts_load_hourly <- msts(hourly_data$load_value, 
+                           seasonal.periods =c(24,168,8766),
+                           start=c(2005,01,01))
+
 ts_load_daily <- msts(daily_data$load_daily, 
                            seasonal.periods =c(7,365.25),
                            start=c(2005,01,01))
 
-# Training data: January 1, 2005, to December 31, 2009
-training_data <- window(ts_load_daily, end=c(2009, 365))
 
-# Test data: 2010-01-01 onward
-test_data <- window(ts_load_daily, start=c(2010,1))
+ts_hourly_train <- subset(ts_load_hourly,
+                                   end = length(ts_load_hourly)-365)
+
+
+ts_hourly_test <- subset(ts_load_hourly,
+                                   start = length(ts_load_hourly)-365)
+
+
+n <- length(ts_load_daily)
+h <- 365
+
+
+ts_daily_train <- window(ts_load_daily, end=c(2009, 365))
+
+ts_daily_test <- window(ts_load_daily, start=c(2010,1))
 
 ```
 
@@ -97,6 +113,23 @@ Note that the `echo = FALSE` parameter was added to the code chunk to prevent pr
 ```{r}
 
 write.csv(SNAIVE_seas, file = "seasonal_naive_forecast.csv")
+
+```
+
+
+## TBATS
+```{r}
+
+tbats_fit <- tbats(ts_load_daily)
+tbats_forecast <- forecast(tbats_fit, h = 60)
+autoplot(tbats_forecast)
+
+```
+
+## Write CSV for tbats
+```{r}
+
+write.csv(tbats_forecast, file = "tbats_forecast.csv")
 
 ```
 
