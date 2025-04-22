@@ -59,6 +59,14 @@ ts_load_daily_u <- msts(daily_data$load_daily,
                            seasonal.periods =c(7,365.25),
                            start=c(2005,01,01))
 
+ts_temp_daily_u <- msts(daily_data$temperature_daily_ts, 
+                           seasonal.periods =c(7,365.25),
+                           start=c(2005,01,01))
+
+ts_humid_daily_u <- msts(daily_data$humidity_daily_ts, 
+                           seasonal.periods =c(7,365.25),
+                           start=c(2005,01,01))
+
 
 n <- length(ts_load_daily_u)
 h <- 365.25
@@ -166,7 +174,48 @@ plot(MEAN_seas)
 write.csv(MEAN_seas, file = "MEAN_seas_forecast.csv")
 
 ```
-## SS  - Daily
+
+
+## Forecast using Seasonal Naive Method - hourly
+```{r}
+
+# Seasonal naive on original data
+SNAIVE_seash <- snaive(ts_load_hourly_u, h=1440)
+plot(SNAIVE_seash)
+
+checkresiduals(SNAIVE_seash)
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+## Write into CSV
+```{r}
+
+write.csv(SNAIVE_seash, file = "seasonal_naive_hourly_forecast.csv")
+
+```
+
+## ARIMA + Fourier
+```{r}
+
+ts_load_daily_uf <- ts(ts_load_daily_uf, frequency = 365)
+
+K <- 6
+fourier_train <- fourier(ts_load_daily_uf, K = K)
+fourier_future <- fourier(ts_load_daily_uf, K = K, h = 60)
+fit_fourier <- auto.arima(ts_load_daily_uf, xreg = fourier_train, seasonal = FALSE)
+fourier <- forecast(fit_fourier, xreg = fourier_future, h = 60)
+
+plot(fourier)
+
+write.csv(fourier, file = "fourier_forecast.csv")
+
+
+```
+
+
+
 
 
 
