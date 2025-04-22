@@ -46,34 +46,42 @@ nvar <- ncol(hourly_data) - 1
 nobs <- nrow(hourly_data)
 
 ```
-## Testing and Training Datasets
+## Testing and Training Datasets - Daily
 ```{r}
 
+train_daily <- daily_data %>%
+  filter(date < as.Date("2010-01-01"))
 
-ts_load_hourly <- msts(hourly_data$load_value, 
-                           seasonal.periods =c(24,168,8766),
-                           start=c(2005,01,01))
+test_daily <- daily_data %>%
+  filter(date >= as.Date("2010-01-01"))
 
-ts_load_daily <- msts(daily_data$load_daily, 
+ts_load_daily_u <- msts(daily_data$load_daily, 
                            seasonal.periods =c(7,365.25),
                            start=c(2005,01,01))
 
 
-ts_hourly_train <- subset(ts_load_hourly,
-                                   end = length(ts_load_hourly)-365)
+n <- length(ts_load_daily_u)
+h <- 365.25
+
+ts_daily_train_u <- window(ts_load_daily_u, end=c(2009, 365))
+
+ts_daily_test_u <- window(ts_load_daily_u, start=c(2010,1))
+
+```
+
+## Testing and Training Datasets - Hourly
+```{r}
+
+ts_load_hourly_u <- msts(hourly_data$load_value, 
+                           seasonal.periods =c(24,168,8766),
+                           start=c(2005,01,01))
+
+ts_hourly_train_u <- subset(ts_load_hourly_u,
+                                   end = length(ts_load_hourly_u)-365)
 
 
-ts_hourly_test <- subset(ts_load_hourly,
-                                   start = length(ts_load_hourly)-365)
-
-
-n <- length(ts_load_daily)
-h <- 365
-
-
-ts_daily_train <- window(ts_load_daily, end=c(2009, 365))
-
-ts_daily_test <- window(ts_load_daily, start=c(2010,1))
+ts_hourly_test_u <- subset(ts_load_hourly_u,
+                                   start = length(ts_load_hourly_u)-365)
 
 ```
 
@@ -81,26 +89,26 @@ ts_daily_test <- window(ts_load_daily, start=c(2010,1))
 ## Initial Plots & Time Series
 ```{r}
 
-TSplot <- autoplot(ts_load_daily) +
+TSplot_u <- autoplot(ts_load_daily_u) +
     ggtitle("Daily Load Time Series (2005-2010)") +
     xlab("Year") + 
     ylab("Load") +
     theme_minimal()
-plot(TSplot)
+plot(TSplot_u)
 
 #ACF and PACF plots
 par(mfrow=c(1,2))
-ACF_Plot <- Acf(daily_data$load_daily, lag = 40, plot = TRUE)
-PACF_Plot <- Pacf(daily_data$load_daily, lag = 40)
+ACF_Plot_u <- Acf(daily_data$load_daily, lag = 40, plot = TRUE)
+PACF_Plot_u <- Pacf(daily_data$load_daily, lag = 40)
 par(mfrow=c(1,1))
 
 ```
 
-## Forecast using Seasonal Naive Method
+## Forecast using Seasonal Naive Method - Daily
 ```{r}
 
 # Seasonal naive on original data
-SNAIVE_seas <- snaive(ts_load_daily, h=60)
+SNAIVE_seas <- snaive(ts_load_daily_u, h=60)
 plot(SNAIVE_seas)
 
 checkresiduals(SNAIVE_seas)
@@ -117,10 +125,10 @@ write.csv(SNAIVE_seas, file = "seasonal_naive_forecast.csv")
 ```
 
 
-## TBATS
+## TBATS - Daily
 ```{r}
 
-tbats_fit <- tbats(ts_load_daily)
+tbats_fit <- tbats(ts_load_daily_u)
 tbats_forecast <- forecast(tbats_fit, h = 60)
 autoplot(tbats_forecast)
 
@@ -133,10 +141,10 @@ write.csv(tbats_forecast, file = "tbats_forecast.csv")
 
 ```
 
-## STL + ETS
+## STL + ETS - Daily
 ```{r}
 
-load_stl_ets <- stlf(ts_load_daily, h = 60, method = "ets")
+load_stl_ets <- stlf(ts_load_daily_u, h = 60, method = "ets")
 plot(load_stl_ets)
 
 ```
@@ -147,4 +155,19 @@ plot(load_stl_ets)
 write.csv(load_stl_ets, file = "stlets_forecast.csv")
 
 ```
+
+## Arithmetic mean
+```{r}
+
+MEAN_seas <- meanf(y = ts_load_daily_u, h = 60)  
+checkresiduals(MEAN_seas)
+plot(MEAN_seas)
+
+write.csv(MEAN_seas, file = "MEAN_seas_forecast.csv")
+
+```
+## SS  - Daily
+
+
+
 
