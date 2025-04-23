@@ -1,0 +1,114 @@
+---
+title: "chloe_best2models"
+output: html_document
+date: "2025-04-23"
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,tidy.opts=list(width.cutoff=60), tidy=TRUE) 
+```
+
+```{r}
+library(readxl)
+library(openxlsx)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(forecast)  
+library(Kendall)
+library(tseries)
+library(outliers)
+library(tidyverse)
+library(smooth)
+library(zoo)
+library(kableExtra)
+```
+
+## Importing Data
+
+```{r pressure, echo=FALSE}
+
+#Importing daily data
+daily_data <- read.csv(file="/home/guest/ForecastingCompetition/data/processed/processed_daily_data.csv", header=TRUE)
+
+#Importing hourly data
+hourly_data <- read.csv(file="/home/guest/ForecastingCompetition/data/processed/processed_hourly_data.csv", header=TRUE)
+
+#Inspect daily data
+head(daily_data)
+nvar <- ncol(daily_data) - 1
+nobs <- nrow(daily_data)
+
+#Inspect hourly data
+head(hourly_data)
+nvar <- ncol(hourly_data) - 1
+nobs <- nrow(hourly_data)
+
+```
+## Testing and Training Datasets - Daily
+```{r}
+
+train_daily <- daily_data %>%
+  filter(date < as.Date("2010-01-01"))
+
+test_daily <- daily_data %>%
+  filter(date >= as.Date("2010-01-01"))
+
+ts_load_daily_u <- msts(daily_data$load_daily, 
+                           seasonal.periods =c(7,365.25),
+                           start=c(2005,01,01))
+
+ts_temp_daily_u <- msts(daily_data$temperature_daily_ts, 
+                           seasonal.periods =c(7,365.25),
+                           start=c(2005,01,01))
+
+ts_humid_daily_u <- msts(daily_data$humidity_daily_ts, 
+                           seasonal.periods =c(7,365.25),
+                           start=c(2005,01,01))
+
+
+n <- length(ts_load_daily_u)
+h <- 365.25
+
+ts_daily_train_u <- window(ts_load_daily_u, end=c(2009, 365))
+
+ts_daily_test_u <- window(ts_load_daily_u, start=c(2010,1))
+
+```
+
+## Testing and Training Datasets - Hourly
+```{r}
+
+ts_load_hourly_u <- msts(hourly_data$load_value, 
+                           seasonal.periods =c(24,168,8766),
+                           start=c(2005,01,01))
+
+ts_hourly_train_u <- subset(ts_load_hourly_u,
+                                   end = length(ts_load_hourly_u)-365)
+
+
+ts_hourly_test_u <- subset(ts_load_hourly_u,
+                                   start = length(ts_load_hourly_u)-365)
+
+```
+
+
+## TBATS - Daily
+```{r}
+
+tbats_fit <- tbats(ts_load_daily_u)
+tbats_forecast <- forecast(tbats_fit, h = 60)
+autoplot(tbats_forecast)
+
+```
+
+
+
+
+## Arithmetic mean
+```{r}
+
+MEAN_seas <- meanf(y = ts_load_daily_u, h = 60)  
+checkresiduals(MEAN_seas)
+plot(MEAN_seas)
+
+```

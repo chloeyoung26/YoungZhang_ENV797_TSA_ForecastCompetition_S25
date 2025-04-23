@@ -1,0 +1,145 @@
+---
+title: "ModelsChloe2"
+output: pdf_document
+date: "2025-04-23"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readxl)
+library(openxlsx)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(forecast)  
+library(Kendall)
+library(tseries)
+library(outliers)
+library(tidyverse)
+library(smooth)
+library(zoo)
+library(kableExtra)
+library(timeDate)
+library(glmnet)
+```
+
+
+## Importing Data
+
+```{r pressure, echo=FALSE}
+
+#Importing daily data
+daily_data <- read.csv(file="../data/processed/processed_daily_data.csv", header=TRUE)
+
+#Importing hourly data
+hourly_data <- read.csv(file="../data/processed/processed_hourly_data.csv", header=TRUE)
+
+#Inspect daily data
+nvar <- ncol(daily_data) - 1
+nobs <- nrow(daily_data)
+
+#Inspect hourly data
+nvar <- ncol(hourly_data) - 1
+nobs <- nrow(hourly_data)
+
+
+
+```
+
+
+## Testing and Training Datasets
+```{r}
+
+ts_load_daily_u <- msts(daily_data$load_daily, 
+                           seasonal.periods =c(7,365.25),
+                           start=c(2005,01,01))
+
+ts_temp_daily_u <- msts(daily_data$temperature_daily_ts, 
+                           seasonal.periods =c(7,365.25),
+                           start=c(2005,01,01))
+
+ts_humid_daily_u <- msts(daily_data$humidity_daily_ts, 
+                           seasonal.periods =c(7,365.25),
+                           start=c(2005,01,01))
+
+ts_daily_u <- msts(daily_data, 
+                           seasonal.periods =c(7,365.25),
+                           start=c(2005,01,01))
+
+n <- length(ts_load_daily_u)
+h <- 365
+
+
+ts_daily_train <- window(ts_daily_u, end=c(2009, 365))
+
+ts_daily_test <- window(ts_daily_u, start=c(2010,1))
+
+
+
+```
+
+
+## TBATS - Daily
+```{r}
+
+tbats_fit <- tbats(ts_load_daily_u)
+tbats_forecast <- forecast(tbats_fit, h = 60)
+autoplot(tbats_forecast)
+
+```
+
+```{r}
+
+colnames(daily_data) <- c("Date", "Load", "Humidity", "Temperature")
+
+# Convert data types
+daily_data <- daily_data %>%
+  mutate(Date = as.Date(Date),
+         Load = as.numeric(Load),
+         Temperature = as.numeric(Temperature)) %>%
+  filter(!is.na(Date), !is.na(Load), !is.na(Temperature))
+
+# Add Month and Day columns for average temperature calculation
+daily_data <- daily_data %>%
+  mutate(Month = month(Date),
+         Day = day(Date))
+
+# Compute average temperature by day for Jan and Feb
+avg_temp <- daily_data %>%
+  filter(Month %in% c(1, 2)) %>%
+  group_by(Month, Day) %>%
+  summarise(Avg_Temp = mean(Temperature, na.rm = TRUE)) %>%
+  ungroup()
+
+# Create a synthetic temperature vector for Jan and Feb 2011
+forecast_dates <- seq(as.Date("2011-01-01"), as.Date("2011-02-28"), by = "day")
+forecast_temp <- sapply(forecast_dates, function(d) {
+  m <- month(d)
+  d_day <- day(d)
+  avg_temp %>% filter(Month == m, Day == d_day) %>% pull(Avg_Temp)
+})
+
+# Prepare training data
+train_daily_data <- daily_data %>% filter(Date < as.Date("2011-01-01"))
+train_load <- ts(train_daily_data$Load, frequency = 7)  # Weekly seasonality
+train_temp <- train_daily_data$Temperature
+
+# Fit auto.arima with exogenous temperature
+fit <- auto.arima(train_load, xreg = train_temp)
+
+# Forecast using average temperatures for Jan–Feb 2011
+forecast_result <- forecast(fit, xreg = forecast_temp, h = length(forecast_temp))
+
+# Plot the forecast
+plot(forecast_result, main = "Forecasted Load (Jan–Feb 2011)")
+
+
+```
+
+```{r}
+write.csv(forecast_result, file = "arimatempload.csv")
+```
+
