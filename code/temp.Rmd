@@ -1,0 +1,273 @@
+---
+title: "temp"
+output: html_document
+---
+
+
+
+
+### Search for parameters
+```{r}
+grid_search_nnetar_safe <- function(train_data, test_data, 
+                                    p_values = 1:2, 
+                                    P_values = 0:1, 
+                                    K_values = list(c(1,1), c(2,2), c(3,3)), 
+                                    h = 60,
+                                    repeats = 20) {
+  
+  results <- list()
+  counter <- 1
+  
+  for (p in p_values) {
+    for (P in P_values) {
+      for (K in K_values) {
+        try({
+          # 构建 xreg
+          xreg_train <- cbind(fourier(train_data[,1], K = K), train_data[,5:8])
+          xreg_test_raw <- cbind(fourier(test_data[,1], K = K, h = h), test_data[1:h, 5:8])
+          
+          # 获取训练时的列名
+          col_order <- colnames(xreg_train)
+          
+          # 强制统一测试集列名和顺序
+          colnames(xreg_test_raw) <- colnames(xreg_train)  # 先改名
+          xreg_test <- xreg_test_raw[, col_order]          # 再按顺序排列
+
+          # 建模
+          model <- nnetar(train_data[,1], p = p, P = P, xreg = xreg_train, repeats = repeats)
+          
+          # 预测
+          forecast_result <- forecast(model, h = h, xreg = xreg_test)
+          
+          # 评估
+          acc <- accuracy(forecast_result$mean, test_data[1:h, 1])
+          
+          # 存结果
+          results[[counter]] <- tibble(
+            p = p,
+            P = P,
+            K1 = K[1],
+            K2 = K[2],
+            RMSE = acc["Test set", "RMSE"],
+            MAPE = acc["Test set", "MAPE"]
+          )
+          
+          counter <- counter + 1
+          
+        }, silent = TRUE)  # 有错跳过
+      }
+    }
+  }
+  
+  # 汇总结果
+  results_df <- bind_rows(results)
+  results_df <- arrange(results_df, RMSE)
+  
+  return(results_df)
+}
+```
+
+
+
+```{r}
+result_df <- grid_search_nnetar_safe(
+  train_data = ts_daily_train,
+  test_data = ts_daily_test,
+  p_values = 1:3,
+  P_values = 0:1,
+  K_values = list(c(1,1), c(2,2), c(3,3)),
+  h = 60,
+  repeats = 20
+)
+
+print(result_df)
+
+
+```
+
+
+
+
+# Find features
+
+```{r}
+
+daily_data_w_features <- daily_data
+
+
+# Lags
+daily_data_w_features <- daily_data_w_features %>% mutate(lag1 = lag(daily_data_w_features$load_daily,1),
+                                                          lag2 = lag(daily_data_w_features$load_daily,2),
+                                                          lag3 = lag(daily_data_w_features$load_daily,3),
+                                                          lag4 = lag(daily_data_w_features$load_daily,4),
+                                                          lag5 = lag(daily_data_w_features$load_daily,5),
+                                                          lag6 = lag(daily_data_w_features$load_daily,6),
+                                                          lag7 = lag(daily_data_w_features$load_daily,7))
+
+
+# Volatility
+daily_data_w_features <- daily_data_w_features %>% mutate(volatility_3d = rollapply(daily_data_w_features$load_daily, width = 3, FUN = sd, align = "right", fill = NA),
+                                                          volatility_5d = rollapply(daily_data_w_features$load_daily, width = 5, FUN = sd, align = "right", fill = NA),
+                                                          volatility_7d = rollapply(daily_data_w_features$load_daily, width = 7, FUN = sd, align = "right", fill = NA))
+
+
+# Special days
+Sys.setlocale("LC_ALL", "C")
+daily_data_w_features <- daily_data_w_features %>%
+  mutate(
+    is_weekend = as.integer(weekdays(date) %in% c("Saturday", "Sunday")),
+    weekday_num = wday(date, week_start = 1), 
+    month = month(date),
+    season = case_when(
+      month %in% c(12, 1, 2) ~ 1,
+      month %in% c(3, 4, 5)  ~ 2,
+      month %in% c(6, 7, 8)  ~ 3,
+      month %in% c(9, 10, 11) ~ 4
+    )
+  )
+
+
+
+## Moving average
+
+daily_data_w_features <- daily_data_w_features %>%
+  mutate(
+    ma_1d = rollmean(load_daily, k = 1, fill = NA, align = "right"),
+    ma_3d = rollmean(load_daily, k = 3, fill = NA, align = "right"),
+    ma_7d = rollmean(load_daily, k = 7, fill = NA, align = "right")
+  )
+
+daily_data_w_features <- daily_data_w_features %>% drop_na()
+
+
+## Weather
+
+daily_data_w_features <- daily_data_w_features %>% 
+  mutate(humiditylag1 = lag(daily_data_w_features$humidity_daily_ts,1),
+         humiditylag2 = lag(daily_data_w_features$humidity_daily_ts,2),
+         humiditylag3 = lag(daily_data_w_features$humidity_daily_ts,3),
+         humiditylag4 = lag(daily_data_w_features$humidity_daily_ts,4),
+         humiditylag5 = lag(daily_data_w_features$humidity_daily_ts,5),
+         humiditylag6 = lag(daily_data_w_features$humidity_daily_ts,6),
+         humiditylag7 = lag(daily_data_w_features$humidity_daily_ts,7))
+
+
+daily_data_w_features <- daily_data_w_features %>% 
+  mutate(temperaturelag1 = lag(daily_data_w_features$temperature_daily_ts,1),
+         temperaturelag2 = lag(daily_data_w_features$temperature_daily_ts,2),
+         temperaturelag3 = lag(daily_data_w_features$temperature_daily_ts,3),
+         temperaturelag4 = lag(daily_data_w_features$temperature_daily_ts,4),
+         temperaturelag5 = lag(daily_data_w_features$temperature_daily_ts,5),
+         temperaturelag6 = lag(daily_data_w_features$temperature_daily_ts,6),
+         temperaturelag7 = lag(daily_data_w_features$temperature_daily_ts,7))
+
+
+daily_data_w_features <- daily_data_w_features %>%
+  mutate(
+    humidityma_1d = rollmean(humidity_daily_ts, k = 1, fill = NA, align = "right"),
+    humidityma_3d = rollmean(humidity_daily_ts, k = 3, fill = NA, align = "right"),
+    humidityma_7d = rollmean(humidity_daily_ts, k = 7, fill = NA, align = "right")
+  )
+
+daily_data_w_features <- daily_data_w_features %>%
+  mutate(
+    temperaturema_1d = rollmean(temperature_daily_ts, k = 1, fill = NA, align = "right"),
+    temperaturema_3d = rollmean(temperature_daily_ts, k = 3, fill = NA, align = "right"),
+    temperaturema_7d = rollmean(temperature_daily_ts, k = 7, fill = NA, align = "right")
+  )
+
+ts_load_daily <- msts(daily_data_w_features[-1], 
+                           seasonal.periods =c(7,365.25),
+                           start=c(2005,01,08))
+
+ts_daily_train <- window(ts_load_daily, end=c(2009, 365))
+
+ts_daily_test <- window(ts_load_daily, start=c(2010,1))
+
+```
+
+
+
+LASSO
+```{r}
+
+# 构建训练数据：去除时间列，拆分目标和特征
+X_train <- as.matrix(ts_daily_train[, -1])  # 特征
+y_train <- as.numeric(ts_daily_train[, 1])  # 目标变量：负荷等
+
+
+set.seed(123)  # 保证结果可复现
+
+lasso_model <- cv.glmnet(X_train_scaled, y_train, alpha = 1, standardize = FALSE)
+
+# 查看最佳 lambda
+best_lambda <- lasso_model$lambda.min
+
+# 查看被选择的变量（非零系数）
+coef(lasso_model, s = "lambda.min")
+
+# 获取非零系数对应的变量名
+selected_vars <- rownames(coef(lasso_model))[which(coef(lasso_model)[,1] != 0)]
+selected_vars <- selected_vars[selected_vars != "(Intercept)"]
+print(selected_vars)
+
+
+```
+
+
+
+## NN model with data features + LASSO
+
+```{r NNETAR, echo=TRUE, message=FALSE, warning=FALSE}
+#You can play with the different values for p and P, you can also use xreg with Fourier term to model the multiple seasonality
+
+
+ts_load_daily <- msts(daily_data_w_features[-1], 
+                           seasonal.periods =c(7,365.25),
+                           start=c(2005,01,08))
+
+ts_daily_train <- window(ts_load_daily, end=c(2009, 365))
+
+ts_daily_test <- window(ts_load_daily, start=c(2010,1))
+
+
+NN_fit <- nnetar(ts_daily_train[,1],
+                 p=1,
+                 P=1,
+                 xreg=cbind(fourier(ts_daily_train[,1], K = c(1,1)),ts_daily_train[,c(4:5,11:18)]))
+
+
+NN_for <- forecast(NN_fit, 
+                   h = 60,
+                   xreg=cbind(fourier(ts_daily_test[,1], K = c(1,1),h=60),ts_daily_test[1:60,c(4:5,11:18)]))
+
+
+
+
+#Plot foresting results
+autoplot(NN_for) +
+  ylab("Active Power") 
+
+
+#Plot model + observed data
+autoplot(ts_daily_train[,1]) +
+  autolayer(NN_for, series="Neural Network",PI=TRUE)+
+  ylab("Active Power") 
+
+
+NN_scores <- accuracy(NN_for$mean,ts_daily_test[,1])
+
+print(NN_scores)
+
+output <- NN_for$mean[1:59]
+
+
+template <- read_excel("../result/submission_template.xlsx")
+
+template$load[1:length(output)] <- as.numeric(output)
+
+write.csv(template, file = "../result/NN_with_features V5.csv",row.names = FALSE)
+
+
+
+```
