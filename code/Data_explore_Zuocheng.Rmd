@@ -1,0 +1,99 @@
+---
+title: "Model_DataExplore_Zuocheng"
+author: "Zhang"
+date: "2025-04-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r Warning=FALSE}
+library(readxl)
+library(openxlsx)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(forecast)  
+library(Kendall)
+library(tseries)
+library(outliers)
+library(tidyverse)
+library(smooth)
+library(zoo)
+library(kableExtra)
+library(timeDate)
+library(glmnet)
+
+set.seed(1111)
+```
+
+# Import Data
+
+```{r}
+
+#Importing daily data
+daily_data <- read.csv(file="../data/processed/processed_daily_data.csv", header=TRUE)
+
+
+```
+
+1. Outliers
+
+(Need Cap?)
+
+```{r}
+
+# 提取数据列（假设只有一列）
+data_vec <- daily_data[[2]]
+
+# 计算Q1和Q3
+Q1 <- quantile(data_vec, 0.25, na.rm=TRUE)
+Q3 <- quantile(data_vec, 0.75, na.rm=TRUE)
+IQR_val <- Q3 - Q1
+
+# 异常值判断标准
+lower_bound <- Q1 - 1.5 * IQR_val
+upper_bound <- Q3 + 1.5 * IQR_val
+
+# 找出异常值
+outliers <- data_vec[data_vec < lower_bound | data_vec > upper_bound]
+
+# 打印异常值
+print(outliers)
+
+# 可视化：箱型图
+boxplot(data_vec, main="Boxplot for Outlier Detection", ylab="Value")
+
+plot(data_vec, type='l', main="Time Series with Outliers", ylab="Value")
+points(which(data_vec < lower_bound | data_vec > upper_bound), 
+       data_vec[data_vec < lower_bound | data_vec > upper_bound], 
+       col="red", pch=19)
+
+
+# Capping：将异常值截断到边界
+data_capped <- ifelse(data_vec < lower_bound, lower_bound,
+                      ifelse(data_vec > upper_bound, upper_bound, data_vec))
+
+# 将结果覆盖回原来的数据框
+daily_data$capped_value <- data_capped
+
+
+
+```
+
+temperature: -2 - 0
+humidity: 0
+
+```{r}
+ccf(daily_data$load_daily,daily_data$temperature_daily_ts, lag.max = 15)
+ccf(daily_data$load_daily,daily_data$humidity_daily_ts, lag.max = 15)
+
+
+
+```
+
+
+

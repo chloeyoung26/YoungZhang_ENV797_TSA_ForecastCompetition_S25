@@ -68,6 +68,46 @@ daily_data <- daily_data %>%
 
 
 
+library(zoo)
+
+daily_data <- daily_data %>%
+  mutate(
+    rolling_mean_7 = rollapply(load_daily, width = 7, FUN = mean, align = "right", fill = NA),
+    rolling_mean_14 = rollapply(load_daily, width = 7, FUN = mean, align = "right", fill = NA),
+    rolling_mean_28 = rollapply(load_daily, width = 7, FUN = mean, align = "right", fill = NA),
+    rolling_sd_7 = rollapply(load_daily, width = 7, FUN = sd, align = "right", fill = NA),
+    rolling_sd_14 = rollapply(load_daily, width = 7, FUN = sd, align = "right", fill = NA),
+    rolling_sd_28 = rollapply(load_daily, width = 7, FUN = sd, align = "right", fill = NA),
+  )
+
+
+daily_data$rolling_trend_7 <- rollapply(
+  daily_data$load_daily, 
+  width = 7, 
+  align = "right", 
+  fill = NA,
+  FUN = function(x) {
+    model <- lm(x ~ seq_along(x))
+    coef(model)[2] 
+  }
+)
+
+daily_data <- daily_data %>%
+  mutate(
+    temp_lag_0 = temperature_daily_ts,
+    temp_lag_1 = lag(temperature_daily_ts, 1),
+    temp_lag_2 = lag(temperature_daily_ts, 2),
+    temp_lag_3 = lag(temperature_daily_ts, 3)
+  )
+
+daily_data <- daily_data %>%
+  mutate(
+    humi_lag_0 = humidity_daily_ts,
+    humi_lag_1 = lag(humidity_daily_ts, 1)
+  )
+
+daily_data <- daily_data %>% drop_na()
+
 
 ```
 
@@ -97,7 +137,7 @@ test_set <- window(msts_load_daily, start = c(2005 + (total_length - test_length
 
 ```{r}
 
-variable <- c(5:11)
+variable <- c(9:11)
 
 xreg_train <- cbind(fourier(train_set[,"load_daily"],K=c(2,6)), train_set[,variable])
 xreg_test  <- cbind(fourier(test_set[,"load_daily"] ,K=c(2,6) , h=length(test_set[,"load_daily"])), test_set[,variable])
@@ -105,7 +145,7 @@ xreg_test  <- cbind(fourier(test_set[,"load_daily"] ,K=c(2,6) , h=length(test_se
 
 
 
-NN_fit <- nnetar(train_set[,"load_daily"], xreg = xreg_train, p = 0, P = 1)
+NN_fit <- nnetar(train_set[,"load_daily"], xreg = xreg_train, size=7)
 NN_for <- forecast(NN_fit, xreg = xreg_test, h=length(test_set[,1]))
 
 forecast_NN_accuracy <- accuracy(NN_for$mean, test_set[,"load_daily"])
@@ -131,6 +171,16 @@ xreg_future <- cbind(fourier_future, res)
 NN_future <- forecast(NN_fit, xreg = xreg_future, h = 59)
 
 
+#### Test
+
+fourier_future <- fourier(test_set[,"load_daily"], K=c(2,6), h=length(test_set[,1]))
+
+xreg_future <- cbind(fourier_future, test_set[,variable])
+
+
+NN_future <- forecast(NN_fit, xreg = xreg_future, h = 59)
+
+temp <- NN_future$mean
 
 ```
 # Save
@@ -138,6 +188,8 @@ NN_future <- forecast(NN_fit, xreg = xreg_future, h = 59)
 ```{r}
 
 output <- NN_future$mean
+
+output <- NN_future$mean[1:59]
 
 template <- read_excel("../result/submission_template.xlsx")
 
@@ -166,51 +218,6 @@ write.csv(template, file = "../result/NN_with_features V5.csv",row.names = FALSE
 
 
 
-
-
-
-
-
-
-
-
-# Function
-
-```{r}
-
-predict_future_xreg <- function(train_set, variables, h, freq = 365.25) {
-  # train_set: 数据框或矩阵，包含你所有训练数据（含这些变量）
-  # variables: 列索引或列名，例如 c(5:11)
-  # h: 预测未来多少步
-  # freq: 时间序列的频率，默认按日（365.25）
-
-  # 初始化结果列表
-  future_list <- list()
-
-  for (i in variables) {
-    # 取出变量时间序列
-    ts_data <- ts(train_set[, i], frequency = freq)
-
-    # 建模
-    model <- nnetar(ts_data)
-
-    # 预测
-    fc <- forecast(model, h = h)
-
-    # 存储结果
-    future_list[[as.character(i)]] <- as.numeric(fc$mean)
-  }
-
-  # 合并结果成矩阵（行是时间，列是变量）
-  future_matrix <- do.call(cbind, future_list)
-  colnames(future_matrix) <- paste0("V", variables)
-
-  return(future_matrix)
-}
-
-
-
-```
 
 
 
