@@ -1,0 +1,319 @@
+---
+title: "Model3_Zuocheng"
+author: "Zhang"
+date: "2025-04-25"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r Warning=FALSE}
+library(readxl)
+library(openxlsx)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(forecast)  
+library(Kendall)
+library(tseries)
+library(outliers)
+library(tidyverse)
+library(smooth)
+library(zoo)
+library(kableExtra)
+library(timeDate)
+library(glmnet)
+library(xgboost)
+
+set.seed(1111)
+Sys.setlocale("LC_ALL", "C")
+```
+
+
+
+# Import Data
+
+```{r}
+
+#Importing daily data
+daily_data <- read.csv(file="../data/processed/processed_daily_data.csv", header=TRUE)
+
+
+```
+
+```{r}
+
+msts_load_year <- msts(daily_data[c(1:365),2], 
+                           seasonal.periods =c(7,365.25),
+                           start=c(2005,01,01))
+
+msts_load_month <- msts(daily_data[c(32:62),2], 
+                           seasonal.periods =c(7,365.25),
+                           start=c(2005,01,01))
+
+
+msts_load_week <- msts(daily_data[c(1:7),2], 
+                           seasonal.periods =c(7,365.25),
+                           start=c(2005,01,01))
+
+  autoplot(msts_load_year)
+  autoplot(msts_load_month)
+  autoplot(msts_load_week)
+
+```
+
+
+
+# Get features
+
+## Day features
+
+Including holidays, weekends, every weekday, season
+```{r}
+daily_data$date <- as.Date(daily_data$date)
+us_years <- as.numeric(format(daily_data$date, "%Y"))
+us_holidays <- holidayNYSE(unique(us_years))
+
+
+daily_data <- daily_data %>%
+  mutate(is_weekend = as.integer(weekdays(date) %in% c("Saturday", "Sunday"))) %>%
+  mutate(quarter = quarter(date),is_us_holiday = as.integer(date %in% as.Date(us_holidays)))
+
+
+```
+
+```{r}
+## Weekday
+
+daily_data <- daily_data %>%
+  mutate(weekday = weekdays(date)) %>%
+  mutate(weekday = factor(weekday, 
+                          levels = c("Monday", "Tuesday", "Wednesday", 
+                                     "Thursday", "Friday", "Saturday", "Sunday"))) 
+
+everyday <- model.matrix(~ weekday - 1, data = daily_data)
+daily_data <- cbind(daily_data, everyday)
+
+
+## Season
+
+daily_data <- daily_data %>%
+  mutate(month = month(date)) %>%
+  mutate(season = case_when(
+    month %in% c(12, 1, 2)  ~ "Winter",
+    month %in% c(3, 4, 5)   ~ "Spring",
+    month %in% c(6, 7, 8)   ~ "Summer",
+    month %in% c(9, 10, 11) ~ "Fall"
+  ))
+
+each_season <- model.matrix(~ season - 1, data = daily_data)
+daily_data <- cbind(daily_data, each_season)
+
+
+
+
+```
+
+
+## Lagged values of load
+
+```{r}
+
+daily_data <- daily_data %>%
+              mutate(lag1 = lag(daily_data$load_daily,1),
+                     lag2 = lag(daily_data$load_daily,2),
+                     lag3 = lag(daily_data$load_daily,3),
+                     lag4 = lag(daily_data$load_daily,4),
+                     lag5 = lag(daily_data$load_daily,5),
+                     lag6 = lag(daily_data$load_daily,6),
+                     lag7 = lag(daily_data$load_daily,7),
+                     )  
+
+```
+
+## Lagged values of weather
+
+```{r}
+
+daily_data <- daily_data %>%
+  mutate(
+    temp_lag_0 = temperature_daily_ts,
+    temp_lag_1 = lag(temperature_daily_ts, 1),
+    temp_lag_2 = lag(temperature_daily_ts, 2),
+    temp_lag_3 = lag(temperature_daily_ts, 3)
+  )
+
+
+
+daily_data <- daily_data %>%
+  mutate(
+    humi_lag_0 = humidity_daily_ts,
+    humi_lag_1 = lag(humidity_daily_ts, 1),
+    humi_lag_1 = lag(humidity_daily_ts, 2)
+  )
+
+
+
+```
+
+## Moving average
+
+```{r}
+
+daily_data <- daily_data %>%
+  mutate(
+    rolling_mean_2 = rollapply(load_daily, width = 7, FUN = mean, align = "right", fill = NA),
+    rolling_mean_3 = rollapply(load_daily, width = 7, FUN = mean, align = "right", fill = NA),
+    rolling_mean_7 = rollapply(load_daily, width = 7, FUN = mean, align = "right", fill = NA),
+  )
+
+
+
+```
+
+
+## Fluctuation
+
+```{r}
+
+daily_data <- daily_data %>%
+mutate(volatility_2d = rollapply(daily_data$load_daily, width = 3, FUN = sd, align = "right", fill = NA),
+       volatility_3d = rollapply(daily_data$load_daily, width = 7, FUN = sd, align = "right", fill = NA),
+       volatility_7d = rollapply(daily_data$load_daily, width = 7, FUN = sd, align = "right", fill = NA),
+       volatility_14d = rollapply(daily_data$load_daily, width = 7, FUN = sd, align = "right", fill = NA))  
+
+
+```
+
+## Drop NA
+
+```{r}
+
+daily_data <- daily_data %>% drop_na()
+
+
+## Delete temp vars
+daily_data <- daily_data %>% select(-c("season","weekday","month","quarter","humidity_daily_ts","temperature_daily_ts"))
+
+
+```
+
+```{r}
+
+train <- daily_data[daily_data$date <= "2009-12-31",]
+test <- daily_data[-(1:nrow(train)),]
+
+
+train_Dmatrix <- train %>% 
+                 select(-c("date","load_daily")) %>% 
+                 as.matrix() %>% 
+                 xgb.DMatrix()
+                
+
+test_Dmatrix <- test %>% 
+                select(-c("date","load_daily")) %>% 
+                as.matrix() %>% 
+                xgb.DMatrix()
+
+targets <- train$load_daily
+
+
+```
+
+
+```{r}
+#Cross-validation
+library(caret)
+xgb_trcontrol <- trainControl(
+  method = "cv", 
+  number = 10,
+  allowParallel = TRUE, 
+  verboseIter = FALSE, 
+  returnData = FALSE
+)
+#Building parameters set
+xgb_grid <- base::expand.grid(
+  list(
+    nrounds = seq(100,200),
+    max_depth = c(6,15,20), 
+    colsample_bytree = 1, 
+    eta = 0.5,
+    gamma = 0,
+    min_child_weight = 1,  
+    subsample = 1)
+)
+
+
+```
+
+```{r Warnings = FALSE}
+#Building the model
+model_xgb <- caret::train(
+  train %>% select(-c("date","load_daily")),targets,
+  trControl = xgb_trcontrol,
+  tuneGrid = xgb_grid,
+  method = "xgbTree",
+  nthread = 10
+)
+
+```
+
+```{r}
+model_xgb$bestTune
+
+
+```
+
+```{r}
+# 计算特征重要性
+importance_matrix <- xgb.importance(model = model_xgb$finalModel)
+
+# 查看重要性表格
+print(importance_matrix)
+
+# 画出重要性图
+xgb.plot.importance(importance_matrix, top_n = 10)
+```
+
+
+```{r}
+
+predictions <- predict(model_xgb, newdata = test %>% select(-c("date", "load_daily")))
+
+accuracy(predictions,test[,2])
+
+
+
+
+```
+
+```{r}
+
+library(ggplot2)
+
+# 创建数据框
+plot_data <- data.frame(
+  Date = test$date,  # 确保 test$date 是时间列
+  Actual = test[, 2],
+  Predicted = predictions
+)
+
+# 绘图
+ggplot(plot_data, aes(x = Date)) +
+  geom_line(aes(y = Actual, color = "Actual")) +
+  geom_line(aes(y = Predicted, color = "Predicted")) +
+  labs(
+    title = "Actual vs Predicted Load",
+    x = "Date",
+    y = "Load",
+    color = ""
+  ) +
+  theme_minimal()
+
+
+
+```
+
