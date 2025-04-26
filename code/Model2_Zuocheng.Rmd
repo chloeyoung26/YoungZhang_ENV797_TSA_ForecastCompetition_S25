@@ -41,56 +41,83 @@ daily_data <- read.csv(file="../data/processed/processed_daily_data.csv", header
 
 ```
 
+
+
 # Get features
 
+## Day features
+
+Including holidays, weekends, every weekday, season
 ```{r}
-
-# Get the date
 daily_data$date <- as.Date(daily_data$date)
-
 us_years <- as.numeric(format(daily_data$date, "%Y"))
-
 us_holidays <- holidayNYSE(unique(us_years))
 
 
-Sys.setlocale("LC_ALL", "C")
+daily_data <- daily_data %>%
+  mutate(is_weekend = as.integer(weekdays(date) %in% c("Saturday", "Sunday"))) %>%
+  mutate(quarter = quarter(date),is_us_holiday = as.integer(date %in% as.Date(us_holidays)))
 
+
+```
+
+```{r}
+## Weekday
+
+daily_data <- daily_data %>%
+  mutate(weekday = weekdays(date)) %>%
+  mutate(weekday = factor(weekday, 
+                          levels = c("Monday", "Tuesday", "Wednesday", 
+                                     "Thursday", "Friday", "Saturday", "Sunday"))) 
+
+everyday <- model.matrix(~ weekday - 1, data = daily_data)
+daily_data <- cbind(daily_data, everyday)
+
+
+## Season
+
+daily_data <- daily_data %>%
+  mutate(month = month(date)) %>%
+  mutate(season = case_when(
+    month %in% c(12, 1, 2)  ~ "Winter",
+    month %in% c(3, 4, 5)   ~ "Spring",
+    month %in% c(6, 7, 8)   ~ "Summer",
+    month %in% c(9, 10, 11) ~ "Fall"
+  ))
+
+each_season <- model.matrix(~ season - 1, data = daily_data)
+daily_data <- cbind(daily_data, each_season)
+
+
+## Month
+daily_data <- daily_data %>%
+  mutate(month = month(date, label = TRUE, abbr = FALSE))  
+  
+each_month <- model.matrix(~ month - 1, data = daily_data)
+daily_data <- cbind(daily_data, each_month)
+
+```
+
+
+## Lagged values of load
+
+```{r}
 
 daily_data <- daily_data %>%
               mutate(lag1 = lag(daily_data$load_daily,1),
                      lag2 = lag(daily_data$load_daily,2),
-                     volatility_3d = rollapply(daily_data$load_daily, width = 3, FUN = sd, align = "right", fill = NA),
-                     volatility_7d = rollapply(daily_data$load_daily, width = 7, FUN = sd, align = "right", fill = NA))  %>%
-  mutate(is_weekend = as.integer(weekdays(date) %in% c("Saturday", "Sunday"))) %>%
-  mutate(quarter = quarter(date),
-         is_us_holiday = as.integer(date %in% as.Date(us_holidays))) %>%
-  drop_na()
+                     lag3 = lag(daily_data$load_daily,3),
+                     lag4 = lag(daily_data$load_daily,4),
+                     lag5 = lag(daily_data$load_daily,5),
+                     lag6 = lag(daily_data$load_daily,6),
+                     lag7 = lag(daily_data$load_daily,7),
+                     )  
 
+```
 
+## Lagged values of weather
 
-library(zoo)
-
-daily_data <- daily_data %>%
-  mutate(
-    rolling_mean_7 = rollapply(load_daily, width = 7, FUN = mean, align = "right", fill = NA),
-    rolling_mean_14 = rollapply(load_daily, width = 7, FUN = mean, align = "right", fill = NA),
-    rolling_mean_28 = rollapply(load_daily, width = 7, FUN = mean, align = "right", fill = NA),
-    rolling_sd_7 = rollapply(load_daily, width = 7, FUN = sd, align = "right", fill = NA),
-    rolling_sd_14 = rollapply(load_daily, width = 7, FUN = sd, align = "right", fill = NA),
-    rolling_sd_28 = rollapply(load_daily, width = 7, FUN = sd, align = "right", fill = NA),
-  )
-
-
-daily_data$rolling_trend_7 <- rollapply(
-  daily_data$load_daily, 
-  width = 7, 
-  align = "right", 
-  fill = NA,
-  FUN = function(x) {
-    model <- lm(x ~ seq_along(x))
-    coef(model)[2] 
-  }
-)
+```{r}
 
 daily_data <- daily_data %>%
   mutate(
@@ -100,14 +127,84 @@ daily_data <- daily_data %>%
     temp_lag_3 = lag(temperature_daily_ts, 3)
   )
 
+
+
 daily_data <- daily_data %>%
   mutate(
     humi_lag_0 = humidity_daily_ts,
-    humi_lag_1 = lag(humidity_daily_ts, 1)
+    humi_lag_1 = lag(humidity_daily_ts, 1),
+    humi_lag_1 = lag(humidity_daily_ts, 2)
   )
+
+
+
+```
+
+## Moving average
+
+```{r}
+
+daily_data <- daily_data %>%
+  mutate(
+    rolling_mean_2 = rollapply(load_daily, width = 7, FUN = mean, align = "right", fill = NA),
+    rolling_mean_3 = rollapply(load_daily, width = 7, FUN = mean, align = "right", fill = NA),
+    rolling_mean_7 = rollapply(load_daily, width = 7, FUN = mean, align = "right", fill = NA),
+  )
+
+
+
+```
+
+
+## Fluctuation
+
+```{r}
+
+daily_data <- daily_data %>%
+mutate(volatility_2d = rollapply(daily_data$load_daily, width = 3, FUN = sd, align = "right", fill = NA),
+       volatility_3d = rollapply(daily_data$load_daily, width = 7, FUN = sd, align = "right", fill = NA),
+       volatility_7d = rollapply(daily_data$load_daily, width = 7, FUN = sd, align = "right", fill = NA),
+       volatility_14d = rollapply(daily_data$load_daily, width = 7, FUN = sd, align = "right", fill = NA))  
+
+
+```
+
+# Alternative
+
+```{r}
+
+daily_data <- daily_data %>%
+              mutate(lag1 = lag(daily_data$load_daily,1),
+                     lag2 = lag(daily_data$load_daily,2))
+
+daily_data <- daily_data %>%
+  mutate(
+    temp_lag_0 = temperature_daily_ts,
+   )                     
+
+daily_data <- daily_data %>%
+  mutate(
+    rolling_mean_2 = rollapply(load_daily, width = 7, FUN = mean, align = "right", fill = NA)
+  )
+
+daily_data <- daily_data %>%
+mutate(volatility_2d = rollapply(daily_data$load_daily, width = 3, FUN = sd, align = "right", fill = NA)) 
+
+```
+
+
+
+## Drop NA
+
+```{r}
 
 daily_data <- daily_data %>% drop_na()
 
+
+## Delete temp vars
+daily_data <- daily_data %>% select(-c("season","weekday","month","quarter","humidity_daily_ts","temperature_daily_ts"))
+
+#daily_data <- daily_data %>% select(-c("humidity_daily_ts","temperature_daily_ts"))
 
 ```
 
@@ -137,7 +234,8 @@ test_set <- window(msts_load_daily, start = c(2005 + (total_length - test_length
 
 ```{r}
 
-variable <- c(9:11)
+variable <- c("lag1","lag2","volatility_2d","monthApril","monthMay","monthOctober","monthJuly")
+
 
 xreg_train <- cbind(fourier(train_set[,"load_daily"],K=c(2,6)), train_set[,variable])
 xreg_test  <- cbind(fourier(test_set[,"load_daily"] ,K=c(2,6) , h=length(test_set[,"load_daily"])), test_set[,variable])
@@ -145,7 +243,7 @@ xreg_test  <- cbind(fourier(test_set[,"load_daily"] ,K=c(2,6) , h=length(test_se
 
 
 
-NN_fit <- nnetar(train_set[,"load_daily"], xreg = xreg_train, size=7)
+NN_fit <- nnetar(train_set[,"load_daily"], xreg = xreg_train, size=7, repeats = 40)
 NN_for <- forecast(NN_fit, xreg = xreg_test, h=length(test_set[,1]))
 
 forecast_NN_accuracy <- accuracy(NN_for$mean, test_set[,"load_daily"])
@@ -160,29 +258,22 @@ plot(NN_for)
 
 ```{r}
 
-res <- predict_future_xreg(msts_load_daily, variable, h=59)
-
-
-fourier_future <- fourier(msts_load_daily[,"load_daily"], K=c(2,6), h=59)
-
-xreg_future <- cbind(fourier_future, res)
-
-
-NN_future <- forecast(NN_fit, xreg = xreg_future, h = 59)
-
-
 #### Test
 
-fourier_future <- fourier(test_set[,"load_daily"], K=c(2,6), h=length(test_set[,1]))
-
-xreg_future <- cbind(fourier_future, test_set[,variable])
+NN_fit <- nnetar(daily_data[,"load_daily"], xreg = daily_data[,variable], size=7, repeats = 40)
 
 
-NN_future <- forecast(NN_fit, xreg = xreg_future, h = 59)
+
+NN_future <- forecast(NN_fit, xreg = test_set[,variable], h=length(test_set[,1]))
 
 temp <- NN_future$mean
 
 ```
+
+
+
+
+
 # Save
 
 ```{r}
@@ -195,31 +286,9 @@ template <- read_excel("../result/submission_template.xlsx")
 
 template$load[1:length(output)] <- as.numeric(output)
 
-write.csv(template, file = "../result/NN_with_features V5.csv",row.names = FALSE)
+write.csv(template, file = "../result/NN_with_features V7.csv",row.names = FALSE)
 
 
 
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

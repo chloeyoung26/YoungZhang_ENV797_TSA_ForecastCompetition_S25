@@ -28,10 +28,10 @@ library(kableExtra)
 ```{r pressure, echo=FALSE}
 
 #Importing daily data
-daily_data <- read.csv(file="/home/guest/ForecastingCompetition/data/processed/processed_daily_data.csv", header=TRUE)
+daily_data <- read.csv(file="../data/processed/processed_daily_data.csv", header=TRUE)
 
 #Importing hourly data
-hourly_data <- read.csv(file="/home/guest/ForecastingCompetition/data/processed/processed_hourly_data.csv", header=TRUE)
+hourly_data <- read.csv(file="../data/processed/processed_hourly_data.csv", header=TRUE)
 
 #Inspect daily data
 head(daily_data)

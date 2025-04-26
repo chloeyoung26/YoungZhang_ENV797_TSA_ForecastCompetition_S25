@@ -50,12 +50,14 @@ msts_load_year <- msts(daily_data[c(1:365),2],
                            seasonal.periods =c(7,365.25),
                            start=c(2005,01,01))
 
+
+
 msts_load_month <- msts(daily_data[c(32:62),2], 
                            seasonal.periods =c(7,365.25),
                            start=c(2005,01,01))
+autoplot(msts_load_month)
 
-
-msts_load_week <- msts(daily_data[c(1:7),2], 
+msts_load_week <- msts(daily_data[c(16:33),2], 
                            seasonal.periods =c(7,365.25),
                            start=c(2005,01,01))
 
@@ -64,6 +66,81 @@ msts_load_week <- msts(daily_data[c(1:7),2],
   autoplot(msts_load_week)
 
 ```
+
+
+
+```{r}
+
+
+daily_data <- daily_data %>%
+  mutate(
+    Year = year(date),
+    Month = month(date, label = TRUE, abbr = TRUE) 
+  )
+
+
+ggplot(daily_data, aes(x = Month, y = load_daily, fill = as.factor(Year))) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.6) +
+  labs(title = "Monthly Load Distribution by Year", y = "Load", x = "Month") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+
+
+```
+
+```{r}
+
+monthly_avg <- daily_data %>%
+  group_by(Year, Month) %>%
+  summarise(avg_load = mean(load_daily, na.rm = TRUE)) %>%
+  ungroup()
+
+
+ggplot(monthly_avg, aes(x = Month, y = as.factor(Year), fill = avg_load)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "white", high = "steelblue") +
+  labs(title = "Monthly Average Load by Year", x = "Month", y = "Year") +
+  theme_minimal()
+
+
+
+```
+
+```{r}
+library(dplyr)
+library(lubridate)
+
+daily_data <- daily_data %>%
+  mutate(
+    Year = year(date),
+    Month = month(date, label = TRUE, abbr = TRUE),
+    Weekday = wday(date, label = TRUE, abbr = TRUE)  # 星期几（英文简写Mon/Tue/...）
+  )
+
+weekday_avg <- daily_data %>%
+  group_by(Year, Weekday) %>%
+  summarise(avg_load = mean(load_daily, na.rm = TRUE)) %>%
+  ungroup()
+
+ggplot(weekday_avg, aes(x = Weekday, y = as.factor(Year), fill = avg_load)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "white", high = "firebrick") +
+  labs(title = "Average Load by Weekday and Year", x = "Weekday", y = "Year") +
+  theme_minimal()
+
+library(ggplot2)
+
+ggplot(daily_data, aes(x = Weekday, y = load_daily, fill = as.factor(Year))) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.6) +
+  labs(title = "Load Distribution by Weekday and Year", y = "Load", x = "Weekday") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+
+```
+
+
 
 
 
@@ -188,6 +265,31 @@ mutate(volatility_2d = rollapply(daily_data$load_daily, width = 3, FUN = sd, ali
 
 ```
 
+# Alternative
+
+```{r}
+
+daily_data <- daily_data %>%
+              mutate(lag1 = lag(daily_data$load_daily,1),
+                     lag2 = lag(daily_data$load_daily,2))
+
+daily_data <- daily_data %>%
+  mutate(
+    temp_lag_0 = temperature_daily_ts,
+   )                     
+
+daily_data <- daily_data %>%
+  mutate(
+    rolling_mean_2 = rollapply(load_daily, width = 7, FUN = mean, align = "right", fill = NA)
+  )
+
+daily_data <- daily_data %>%
+mutate(volatility_2d = rollapply(daily_data$load_daily, width = 3, FUN = sd, align = "right", fill = NA)) 
+
+```
+
+
+
 ## Drop NA
 
 ```{r}
@@ -198,12 +300,14 @@ daily_data <- daily_data %>% drop_na()
 ## Delete temp vars
 daily_data <- daily_data %>% select(-c("season","weekday","month","quarter","humidity_daily_ts","temperature_daily_ts"))
 
+#daily_data <- daily_data %>% select(-c("humidity_daily_ts","temperature_daily_ts"))
 
 ```
 
 ```{r}
 
 train <- daily_data[daily_data$date <= "2009-12-31",]
+
 test <- daily_data[-(1:nrow(train)),]
 
 
@@ -267,16 +371,6 @@ model_xgb$bestTune
 
 ```
 
-```{r}
-# 计算特征重要性
-importance_matrix <- xgb.importance(model = model_xgb$finalModel)
-
-# 查看重要性表格
-print(importance_matrix)
-
-# 画出重要性图
-xgb.plot.importance(importance_matrix, top_n = 10)
-```
 
 
 ```{r}
@@ -289,31 +383,3 @@ accuracy(predictions,test[,2])
 
 
 ```
-
-```{r}
-
-library(ggplot2)
-
-# 创建数据框
-plot_data <- data.frame(
-  Date = test$date,  # 确保 test$date 是时间列
-  Actual = test[, 2],
-  Predicted = predictions
-)
-
-# 绘图
-ggplot(plot_data, aes(x = Date)) +
-  geom_line(aes(y = Actual, color = "Actual")) +
-  geom_line(aes(y = Predicted, color = "Predicted")) +
-  labs(
-    title = "Actual vs Predicted Load",
-    x = "Date",
-    y = "Load",
-    color = ""
-  ) +
-  theme_minimal()
-
-
-
-```
-
